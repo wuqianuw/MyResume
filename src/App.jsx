@@ -1,4 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
+import gsap from 'gsap'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import './style.css'
+
+gsap.registerPlugin(ScrollTrigger)
 
 /* ─── Mobile Menu ─── */
 function useMobileMenu() {
@@ -23,129 +28,129 @@ function useMobileMenu() {
       menu.classList.remove('open')
       document.body.style.overflow = ''
     }
-    links.forEach(l => l.addEventListener('click', onLinkClick))
+    for (const l of links) l.addEventListener('click', onLinkClick)
 
     return () => {
       hamburger.removeEventListener('click', onClick)
-      links.forEach(l => l.removeEventListener('click', onLinkClick))
+      for (const l of links) l.removeEventListener('click', onLinkClick)
     }
   }, [])
 
   return { hamburgerRef, menuRef }
 }
 
-/* ─── Navbar scroll active ─── */
+/* ─── Navbar: IntersectionObserver instead of scroll listener ─── */
 function useNavbarActive() {
   useEffect(() => {
-    const sections = document.querySelectorAll('section[id]')
     const navLinks = document.querySelectorAll('.nav-link')
+    const sections = document.querySelectorAll('section[id]')
 
-    const onScroll = () => {
-      let current = ''
-      sections.forEach(section => {
-        const top = section.offsetTop - 120
-        if (window.scrollY >= top) current = section.getAttribute('id')
-      })
-      navLinks.forEach(link => {
-        link.classList.toggle('active', link.getAttribute('href') === `#${current}`)
-      })
+    const cb = (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          const id = entry.target.getAttribute('id')
+          for (const link of navLinks) {
+            link.classList.toggle('active', link.getAttribute('href') === `#${id}`)
+          }
+        }
+      }
     }
-    window.addEventListener('scroll', onScroll, { passive: true })
-    onScroll()
-    return () => window.removeEventListener('scroll', onScroll)
+
+    const observer = new IntersectionObserver(cb, {
+      rootMargin: '-40% 0px -55% 0px',
+      threshold: 0,
+    })
+    for (const s of sections) observer.observe(s)
+
+    return () => observer.disconnect()
   }, [])
 }
 
 /* ─── GSAP Animations ─── */
 function useGSAPAnimations() {
+  const initialized = useRef(false)
+
   useEffect(() => {
-    let gsap, ScrollTrigger
-    let pollTimer
+    if (initialized.current) return
+    initialized.current = true
 
-    const init = () => {
-      if (window.gsap) {
-        gsap = window.gsap
-        ScrollTrigger = window.ScrollTrigger
-        gsap.registerPlugin(ScrollTrigger)
-        run()
-      } else {
-        pollTimer = setTimeout(init, 50)
+    /* Opening sequence — no blur, cheaper */
+    const videoWrap = document.querySelector('.hero-media-wrap')
+    const navbar = document.getElementById('navbar')
+    const badge = document.querySelector('[data-anim="badge"]')
+    const heroLines = document.querySelectorAll('.hero-line-inner')
+    const desc = document.querySelector('[data-anim="desc"]')
+    const cta = document.querySelector('[data-anim="cta"]')
+
+    if (!videoWrap || !navbar) return
+
+    const tl = gsap.timeline({ defaults: { ease: 'power3.out' } })
+
+    gsap.set(navbar, { y: -40, opacity: 0 })
+    gsap.set(badge, { opacity: 0, y: 20 })
+    gsap.set(heroLines, { y: '100%' })
+    gsap.set([desc, cta], { opacity: 0, y: 24 })
+
+    // No blur — just opacity + scale
+    gsap.set(videoWrap, { scale: 1.06, opacity: 0.7 })
+    tl.to(videoWrap, { scale: 1, opacity: 1, duration: 1.4, ease: 'power2.out' })
+    tl.to(navbar, { y: 0, opacity: 1, duration: 0.7 }, 0.5)
+    tl.to(badge, { opacity: 1, y: 0, duration: 0.6 }, 0.8)
+    tl.to(heroLines, { y: '0%', duration: 0.9, stagger: 0.1, ease: 'power4.out' }, 1.1)
+    tl.to(desc, { opacity: 1, y: 0, duration: 0.6 }, 2.0)
+    tl.to(cta, { opacity: 1, y: 0, duration: 0.5 }, 2.2)
+
+    /* Scroll sections — batch DOM queries once per section */
+    const sections = document.querySelectorAll('[data-section]')
+    for (const section of sections) {
+      const labels = section.querySelectorAll('[data-split]')
+      const staggerParents = section.querySelectorAll('[data-stagger]')
+      const staggerItems = []
+      for (const p of staggerParents) {
+        const children = p.children
+        if (children.length) staggerItems.push(...children)
+        else staggerItems.push(p)
       }
-    }
 
-    const run = () => {
-      /* Opening sequence */
-      const videoWrap = document.querySelector('.hero-media-wrap')
-      const navbar = document.getElementById('navbar')
-      const badge = document.querySelector('[data-anim="badge"]')
-      const heroLines = document.querySelectorAll('.hero-line-inner')
-      const desc = document.querySelector('[data-anim="desc"]')
-      const cta = document.querySelector('[data-anim="cta"]')
+      // Pre-wrap split text (once, not on scroll)
+      for (const el of labels) {
+        if (el.classList.contains('contact-title')) continue
+        const text = el.textContent.trim()
+        if (text && !el.querySelector('.split-line')) {
+          el.innerHTML = `<span class="split-line"><span class="split-line-inner">${text}</span></span>`
+        }
+      }
+      const splitLines = section.querySelectorAll('.split-line-inner')
 
-      const tl = gsap.timeline({ defaults: { ease: 'power3.out' } })
+      const parallaxEl = section.querySelector('[data-parallax]')
+      const revealEls = section.querySelectorAll('[data-reveal]')
 
-      gsap.set(navbar, { y: -40, opacity: 0 })
-      gsap.set(badge, { opacity: 0, y: 20 })
-      gsap.set(heroLines, { y: '100%' })
-      gsap.set([desc, cta], { opacity: 0, y: 24 })
-
-      gsap.set(videoWrap, { scale: 1.08, filter: 'blur(16px)', opacity: 0.6 })
-      tl.to(videoWrap, { scale: 1, filter: 'blur(0px)', opacity: 1, duration: 1.8, ease: 'power2.out' })
-      tl.to(navbar, { y: 0, opacity: 1, duration: 0.8 }, 0.6)
-      tl.to(badge, { opacity: 1, y: 0, duration: 0.7 }, 0.9)
-      tl.to(heroLines, { y: '0%', duration: 1.0, stagger: 0.12, ease: 'power4.out' }, 1.3)
-      tl.to(desc, { opacity: 1, y: 0, duration: 0.7 }, 2.3)
-      tl.to(cta, { opacity: 1, y: 0, duration: 0.6 }, 2.6)
-
-      /* Scroll sections */
-      document.querySelectorAll('[data-section]').forEach(section => {
-        const labels = section.querySelectorAll('[data-split]')
-        const staggerParents = section.querySelectorAll('[data-stagger]')
-        let staggerItems = []
-        staggerParents.forEach(parent => {
-          const children = parent.children
-          if (children.length) staggerItems.push(...children)
-          else staggerItems.push(parent)
-        })
-
-        labels.forEach(el => {
-          if (el.classList.contains('contact-title')) return
-          const text = el.textContent.trim()
-          if (text) el.innerHTML = `<span class="split-line"><span class="split-line-inner">${text}</span></span>`
-        })
-
-        ScrollTrigger.create({
-          trigger: section,
-          start: 'top 78%',
-          once: true,
-          onEnter: () => {
-            const splitLines = section.querySelectorAll('.split-line-inner')
-            if (splitLines.length) {
-              gsap.set(splitLines, { y: '100%' })
-              gsap.to(splitLines, { y: '0%', duration: 1.0, stagger: 0.08, ease: 'power4.out' })
-            }
-            if (staggerItems.length) {
-              gsap.set(staggerItems, { opacity: 0, y: 32 })
-              gsap.to(staggerItems, { opacity: 1, y: 0, duration: 0.7, stagger: 0.08, ease: 'power3.out', delay: 0.35 })
-            }
-            const parallaxEl = section.querySelector('[data-parallax]')
-            if (parallaxEl) {
-              gsap.set(parallaxEl, { opacity: 0, y: 40 })
-              gsap.to(parallaxEl, { opacity: 1, y: 0, duration: 1.0, ease: 'power3.out', delay: 0.2 })
-            }
-            section.querySelectorAll('[data-reveal]').forEach(el => {
-              gsap.set(el, { clipPath: 'inset(0 100% 0 0)' })
-              gsap.to(el, { clipPath: 'inset(0 0% 0 0)', duration: 0.9, ease: 'power3.inOut', delay: 0.3 })
-            })
-          },
-        })
+      ScrollTrigger.create({
+        trigger: section,
+        start: 'top 78%',
+        once: true,
+        onEnter: () => {
+          if (splitLines.length) {
+            gsap.set(splitLines, { y: '100%' })
+            gsap.to(splitLines, { y: '0%', duration: 0.9, stagger: 0.06, ease: 'power4.out' })
+          }
+          if (staggerItems.length) {
+            gsap.set(staggerItems, { opacity: 0, y: 24 })
+            gsap.to(staggerItems, { opacity: 1, y: 0, duration: 0.6, stagger: 0.06, ease: 'power3.out', delay: 0.3 })
+          }
+          if (parallaxEl) {
+            gsap.set(parallaxEl, { opacity: 0, y: 30 })
+            gsap.to(parallaxEl, { opacity: 1, y: 0, duration: 0.8, ease: 'power3.out', delay: 0.15 })
+          }
+          for (const el of revealEls) {
+            gsap.set(el, { clipPath: 'inset(0 100% 0 0)' })
+            gsap.to(el, { clipPath: 'inset(0 0% 0 0)', duration: 0.7, ease: 'power3.inOut', delay: 0.25 })
+          }
+        },
       })
-
-      ScrollTrigger.refresh()
     }
 
-    init()
-    return () => clearTimeout(pollTimer)
+    ScrollTrigger.refresh()
   }, [])
 }
 
@@ -157,7 +162,6 @@ export default function App() {
 
   return (
     <>
-      {/* ══════ HERO ══════ */}
       <section id="hero" className="hero">
         <div className="hero-media-wrap">
           <video className="hero-video" autoPlay muted loop playsInline
@@ -220,13 +224,12 @@ export default function App() {
         </div>
       </section>
 
-      {/* ══════ ABOUT ══════ */}
       <section id="about" className="section about" data-section>
         <div className="container">
           <div className="about-grid">
             <div className="about-avatar-col" data-parallax>
               <div className="avatar-frame">
-                <img src="/avatar.jpg" alt="吴啸天" className="avatar-img" />
+                <img src="/avatar.jpg" alt="吴啸天" className="avatar-img" loading="lazy" />
               </div>
               <div className="contact-mini">
                 <div className="contact-item">
@@ -257,7 +260,6 @@ export default function App() {
         </div>
       </section>
 
-      {/* ══════ PROJECTS ══════ */}
       <section id="projects" className="section projects" data-section>
         <div className="container">
           <div className="section-header">
@@ -265,9 +267,9 @@ export default function App() {
             <h2 className="section-title" data-split>项目经历.</h2>
           </div>
           <div className="projects-grid" data-stagger>
-            <a href="http://47.110.69.206/" target="_blank" className="project-card wide">
+            <a href="http://47.110.69.206/" target="_blank" rel="noopener noreferrer" className="project-card wide">
               <div className="project-thumb" data-reveal>
-                <img src="/chatbot.png" alt="全模态 AI 聊天机器人系统" className="project-img" />
+                <img src="/chatbot.png" alt="全模态 AI 聊天机器人系统" className="project-img" loading="lazy" />
                 <div className="project-thumb-overlay">
                   <span className="project-number">01</span>
                 </div>
@@ -282,9 +284,9 @@ export default function App() {
               </div>
             </a>
 
-            <a href="http://47.110.69.206/" target="_blank" className="project-card">
+            <a href="http://47.110.69.206/" target="_blank" rel="noopener noreferrer" className="project-card">
               <div className="project-thumb" data-reveal>
-                <img src="/ai-clothing.png" alt="AI 穿搭分析助手" className="project-img" />
+                <img src="/ai-clothing.png" alt="AI 穿搭分析助手" className="project-img" loading="lazy" />
                 <div className="project-thumb-overlay">
                   <span className="project-number">02</span>
                 </div>
@@ -299,17 +301,13 @@ export default function App() {
               </div>
             </a>
 
-            <a href="http://47.110.69.206/" target="_blank" className="project-card">
+            <a href="http://47.110.69.206/" target="_blank" rel="noopener noreferrer" className="project-card">
               <div className="project-thumb" data-reveal>
                 <div className="project-thumb-content" style={{ background: 'linear-gradient(135deg, #1a2e1a, #162e21)' }}>
                   <span className="project-number">03</span>
                   <div className="project-thumb-visual">
                     <div className="neural-grid">
-                      <span></span><span></span><span></span><span></span><span></span>
-                      <span></span><span></span><span></span><span></span><span></span>
-                      <span></span><span></span><span></span><span></span><span></span>
-                      <span></span><span></span><span></span><span></span><span></span>
-                      <span></span><span></span><span></span><span></span><span></span>
+                      {Array.from({ length: 25 }).map((_, i) => <span key={i} />)}
                     </div>
                   </div>
                 </div>
@@ -327,7 +325,6 @@ export default function App() {
         </div>
       </section>
 
-      {/* ══════ STRENGTHS ══════ */}
       <section id="strengths" className="section strengths" data-section>
         <div className="container">
           <div className="section-header">
@@ -337,28 +334,28 @@ export default function App() {
           <div className="strengths-grid" data-stagger>
             <div className="strength-card">
               <div className="strength-icon">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
               </div>
               <h3 className="strength-title">Agent 开发</h3>
               <p className="strength-desc">熟悉大模型 API 接入流程，精通 Prompt 编排与多模态模型调用。具备 LangChain、LangChain4j、Deepseek / Qwen 等模型服务接入经验。</p>
             </div>
             <div className="strength-card">
               <div className="strength-icon">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
               </div>
               <h3 className="strength-title">全栈开发</h3>
               <p className="strength-desc">熟练使用 Spring Boot / FastAPI / Next.js 构建前后端应用，掌握 Vue 3 / React 等前端框架，具备完整的项目开发与上线经验。</p>
             </div>
             <div className="strength-card">
               <div className="strength-icon">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
               </div>
               <h3 className="strength-title">部署与工程化</h3>
               <p className="strength-desc">熟悉 Linux / Ubuntu / Docker / Nginx 等运维工具链，具备项目容器化部署、反向代理配置、生产环境问题排查的实战经验。</p>
             </div>
             <div className="strength-card">
               <div className="strength-icon">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
               </div>
               <h3 className="strength-title">深度学习与 AI</h3>
               <p className="strength-desc">熟悉 PyTorch 深度学习框架，具备计算机视觉模型训练、模块优化与微调经验，能针对具体业务做出针对性优化。</p>
@@ -367,7 +364,6 @@ export default function App() {
         </div>
       </section>
 
-      {/* ══════ CONTACT ══════ */}
       <section id="contact" className="section contact" data-section>
         <div className="contact-bg"></div>
         <div className="container contact-container">
@@ -381,12 +377,12 @@ export default function App() {
             <div data-stagger>
               <a href="mailto:wuwang667@qq.com" className="btn-contact">
                 wuwang667@qq.com
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
               </a>
               <div className="contact-social">
                 <a href="tel:17837841884" className="social-link">电话：17837841884</a>
                 <a href="mailto:wuwang667@qq.com" className="social-link">邮箱</a>
-                <a href="http://47.110.69.206/" target="_blank" className="social-link">个人项目</a>
+                <a href="http://47.110.69.206/" target="_blank" rel="noopener noreferrer" className="social-link">个人项目</a>
               </div>
             </div>
           </div>
